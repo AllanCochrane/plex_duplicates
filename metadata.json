@@ -1,0 +1,6 @@
+{
+  "name": "Plex Duplicate Cleaner",
+  "description": "A web app to easily connect to your Plex server, find duplicate TV shows and movies, view file sizes/qualities, and delete the ones you don't need.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

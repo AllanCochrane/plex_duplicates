@@ -116,6 +116,35 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
     setMarkedFiles(prev => Array.from(new Set([...prev, ...filesToMark])));
   };
 
+  const copyToClipboard = (text: string) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(() => {
+        alert("Copied to clipboard!");
+      }).catch(() => {
+        fallbackCopy(text);
+      });
+    } else {
+      fallbackCopy(text);
+    }
+  };
+
+  const fallbackCopy = (text: string) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      alert("Copied to clipboard! (Fallback Mode)");
+    } catch (err) {
+      alert("Failed to copy command. Please select and copy it manually.");
+    }
+    document.body.removeChild(textArea);
+  };
+
   // Derive available filters
   const resolutions = useMemo(() => {
     const res = new Set<string>();
@@ -200,8 +229,7 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
              <h3 className="text-white text-sm font-semibold tracking-wide uppercase">Shell Command to Delete Files</h3>
              <button 
                 onClick={() => {
-                   navigator.clipboard.writeText(generateCommand());
-                   alert("Copied to clipboard!");
+                   copyToClipboard(generateCommand());
                 }}
                 className="text-[10px] bg-[#222] hover:bg-[#333] text-gray-300 py-1 px-2 rounded"
              >

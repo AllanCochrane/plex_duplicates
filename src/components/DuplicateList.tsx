@@ -3,6 +3,13 @@ import { PlexAPI } from '../lib/plex';
 import { formatBytes } from '../lib/utils';
 import { ArrowLeft, Trash2, FileVideo, HardDrive, MonitorPlay, AlertTriangle, Info, AlertCircle, Filter, X, CheckCircle2, Tv } from 'lucide-react';
 
+const isTCLCompatible = (media: any) => {
+  const codec = (media.videoCodec || '').toLowerCase();
+  // Modern TCL TVs (Roku/Android) have excellent HEVC (H.265) and 4K support.
+  // H.264 is also universally supported.
+  return codec === 'hevc' || codec === 'h265' || codec === 'h264' || codec === 'avc';
+};
+
 export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library: any, onBack: () => void }) {
   const [items, setItems] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -49,6 +56,64 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
   const generateCommand = () => {
     if (markedFiles.length === 0) return '';
     return markedFiles.map(file => `rm "${file.replace(/"/g, '\\"')}"`).join('\n');
+  };
+
+  const markNonTCLSafe = () => {
+    const filesToMark: string[] = [];
+    filteredItems.forEach(item => {
+      item.Media?.forEach((media: any) => {
+        if (!isTCLCompatible(media)) {
+          media.Part?.forEach((part: any) => {
+             if (part.file) filesToMark.push(part.file);
+          });
+        }
+      });
+    });
+    
+    setMarkedFiles(prev => Array.from(new Set([...prev, ...filesToMark])));
+  };
+
+  const autoSelectDeletions = () => {
+    const filesToMark: string[] = [];
+    
+    filteredItems.forEach(item => {
+      const medias = item.Media || [];
+      if (medias.length < 2) return;
+
+      const sortedMedias = [...medias].sort((a, b) => {
+        const codecScoreA = (a.videoCodec === 'hevc' || a.videoCodec === 'h265') ? 1 : 0;
+        const codecScoreB = (b.videoCodec === 'hevc' || b.videoCodec === 'h265') ? 1 : 0;
+        
+        if (codecScoreA !== codecScoreB) {
+          return codecScoreB - codecScoreA;
+        }
+        
+        const getRes = (res: string) => {
+          if (!res) return 0;
+          if (res.toLowerCase() === '4k') return 2160;
+          return parseInt(res) || 0;
+        };
+        
+        return getRes(b.videoResolution) - getRes(a.videoResolution);
+      });
+
+      const bestMedia = sortedMedias[0];
+      const bestMediaSize = bestMedia.Part?.reduce((sum: number, p: any) => sum + (p.size || 0), 0) || 0;
+      
+      const THREE_GB = 3 * 1024 * 1024 * 1024;
+      
+      if (bestMediaSize > THREE_GB) {
+        return;
+      }
+
+      for (let i = 1; i < sortedMedias.length; i++) {
+        sortedMedias[i].Part?.forEach((part: any) => {
+          if (part.file) filesToMark.push(part.file);
+        });
+      }
+    });
+
+    setMarkedFiles(prev => Array.from(new Set([...prev, ...filesToMark])));
   };
 
   // Derive available filters
@@ -101,6 +166,23 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
             {library.title} <span className="text-gray-500 ml-2 font-medium">Duplicates</span>
           </h2>
         <div className="flex gap-2">
+          {filteredItems.length > 0 && (
+            <>
+              <button 
+                onClick={markNonTCLSafe}
+                className="px-3 py-1.5 text-xs bg-[#222] border border-[#333] text-gray-300 rounded hover:bg-[#333] hover:text-white font-medium transition-colors"
+              >
+                Mark Non-TCL Safe
+              </button>
+              <button 
+                onClick={autoSelectDeletions}
+                className="px-3 py-1.5 text-xs bg-[#222] border border-[#333] text-gray-300 rounded hover:bg-[#333] hover:text-white font-medium transition-colors"
+                title="Prefers HEVC/H265, then higher resolution. Skips if the best option is over 3GB."
+              >
+                Smart Auto-Select
+              </button>
+            </>
+          )}
           {markedFiles.length > 0 && (
             <button 
               onClick={() => setShowCommand(!showCommand)}
@@ -213,15 +295,6 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
 }
 
 function DuplicateCard({ item, libraryType, qualityFilter, onMarkToggle, markedFiles }: any) {
-  // TCL Compatibility check
-  const isTCLCompatible = (media: any) => {
-    const codec = (media.videoCodec || '').toLowerCase();
-    const resolution = parseInt(media.videoResolution) || 0;
-    // H.264/AVC 1080p or less is the most compatible "safe" format for almost any TCL TV (Roku or Android)
-    const isH264 = codec === 'h264' || codec === 'avc';
-    return isH264 && resolution <= 1080;
-  };
-
   // Title mapping
   const title = libraryType === 'show' 
     ? `${item.grandparentTitle} - S${String(item.parentIndex || 0).padStart(2, '0')}E${String(item.index || 0).padStart(2, '0')} - ${item.title}`

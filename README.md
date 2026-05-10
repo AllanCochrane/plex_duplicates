@@ -4,6 +4,8 @@ A specialized web utility to scan your Plex Media Server for duplicate movie and
 
 ## 🚀 Installation
 
+**Prerequisites:** You must have **Node.js v20.0.0 or higher** installed to run this project. You can check your version by running `node -v`.
+
 1. **Clone the repository** (or download the source).
 2. **Install dependencies**:
    ```bash
@@ -42,3 +44,20 @@ Because this application is often served over a secure connection (`https://...`
 **Options to fix this:**
 1. **Use your `plex.direct` URL**: This is a secure HTTPS address provided by Plex for every server (e.g., `https://192-168-1-50.abcdef...plex.direct:32400`). You can find this in your server console or by inspecting network requests in the Plex Web app.
 2. **Enable Insecure Content**: If you must use a local IP (HTTP), find the site settings in your browser (usually the lock icon or "site info" in the URL bar) and look for "Insecure content". Set it to **Allow**. This tells the browser to trust requests from this specific app to your local server.
+
+## 🐛 Troubleshooting
+
+### `Cannot find native binding` or Tailwind error on `npm run dev`
+If you encounter this error:
+`Error: Cannot find native binding. npm has a bug related to optional dependencies...`
+
+**1. Check your Node.js version**
+If your terminal also shows an `EBADENGINE` warning (e.g., `Unsupported engine: package: '@tailwindcss/oxide...', required: { node: '>= 20' }`), you are using an older version of Node.js (like v18). Tailwind CSS v4 and the Vite plugins for this project require Node v20+. **You must upgrade your Node.js installation** to version 20 or higher. 
+
+**2. Clean Reinstall**
+Once you are on Node 20+, or if you were already on Node 20+ and encountered the underlying npm bug, run the following commands to wipe out the bad installation and try again:
+```bash
+rm -rf node_modules package-lock.json
+npm install
+npm run dev
+```

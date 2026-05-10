@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { PlexAPI } from '../lib/plex';
 import { formatBytes } from '../lib/utils';
-import { ArrowLeft, Trash2, FileVideo, HardDrive, MonitorPlay, AlertTriangle, Info, AlertCircle, Filter, X, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Trash2, FileVideo, HardDrive, MonitorPlay, AlertTriangle, Info, AlertCircle, Filter, X, CheckCircle2, Tv } from 'lucide-react';
 
 export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library: any, onBack: () => void }) {
   const [items, setItems] = useState<any[]>([]);
@@ -9,7 +9,8 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
   const [error, setError] = useState('');
   
   // View states
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [markedFiles, setMarkedFiles] = useState<string[]>([]);
+  const [showCommand, setShowCommand] = useState(false);
 
   // Filter states
   const [qualityFilter, setQualityFilter] = useState<string>('all');
@@ -37,42 +38,17 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
     return () => { mounted = false; };
   }, [api, library]);
 
-  const handleDelete = async (partId: string, mediaId: string, itemKey: string) => {
-    // Only UI deletion confirmation inside the actual delete handler 
-    if (!window.confirm("Are you sure you want to delete this specific file from your Plex server and disk? This action cannot be undone.")) {
-      return;
-    }
-    
-    setDeletingId(partId);
-    
-    try {
-      const success = await api.deleteMediaPart(partId);
-      if (success) {
-        // Update local state to remove the part
-        setItems(prevItems => {
-          return prevItems.map(item => {
-            if (item.ratingKey !== itemKey) return item;
-            
-            // Filter out the deleted media/part
-            const newMedia = item.Media.map((m: any) => {
-              if (m.id == mediaId) {
-                return {
-                  ...m,
-                  Part: m.Part.filter((p: any) => p.id != partId)
-                };
-              }
-              return m;
-            }).filter((m: any) => m.Part && m.Part.length > 0);
-            
-            return { ...item, Media: newMedia };
-          }).filter(item => item.Media && item.Media.length > 1); // Remove from list if it's no longer a duplicate
-        });
-      }
-    } catch (err: any) {
-      alert(`Delete failed: ${err.message}. Make sure "Allow media deletion" is enabled in Plex Settings -> Library.`);
-    } finally {
-      setDeletingId(null);
-    }
+  const handleMarkToggle = (filePath: string) => {
+    setMarkedFiles(prev => 
+      prev.includes(filePath) 
+        ? prev.filter(f => f !== filePath) 
+        : [...prev, filePath]
+    );
+  };
+
+  const generateCommand = () => {
+    if (markedFiles.length === 0) return '';
+    return markedFiles.map(file => `rm "${file.replace(/"/g, '\\"')}"`).join('\n');
   };
 
   // Derive available filters
@@ -124,11 +100,42 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
           <h2 className="text-2xl font-bold text-white tracking-tight flex items-center">
             {library.title} <span className="text-gray-500 ml-2 font-medium">Duplicates</span>
           </h2>
+        <div className="flex gap-2">
+          {markedFiles.length > 0 && (
+            <button 
+              onClick={() => setShowCommand(!showCommand)}
+              className="px-3 py-1.5 text-xs bg-red-900/20 text-red-400 border border-red-900/50 rounded hover:bg-red-900/40 font-medium transition-colors"
+            >
+              {showCommand ? 'Hide Command' : `Show Delete Command (${markedFiles.length})`}
+            </button>
+          )}
         </div>
-        
-        {/* Filters */}
-        <div className="flex bg-[#111] border border-[#222] rounded p-1.5 shadow-sm gap-2">
-          <div className="flex items-center px-3 border-r border-[#333] last:border-0">
+      </div>
+      
+      {showCommand && markedFiles.length > 0 && (
+        <div className="bg-[#111] border border-[#222] p-4 rounded mb-6">
+          <div className="flex items-center justify-between mb-2">
+             <h3 className="text-white text-sm font-semibold tracking-wide uppercase">Shell Command to Delete Files</h3>
+             <button 
+                onClick={() => {
+                   navigator.clipboard.writeText(generateCommand());
+                   alert("Copied to clipboard!");
+                }}
+                className="text-[10px] bg-[#222] hover:bg-[#333] text-gray-300 py-1 px-2 rounded"
+             >
+                COPY
+             </button>
+          </div>
+          <pre className="bg-[#0a0a0a] border border-[#222] text-green-400 p-3 rounded text-xs overflow-x-auto font-mono">
+            {generateCommand()}
+          </pre>
+          <p className="text-gray-500 text-[10px] mt-2 uppercase tracking-widest">Run this command on your server to delete the files.</p>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex bg-[#111] border border-[#222] rounded p-1.5 shadow-sm gap-2 mb-6 w-full max-w-fit">
+        <div className="flex items-center px-3 border-r border-[#333] last:border-0">
             <MonitorPlay className="w-4 h-4 text-gray-500 mr-2" />
             <select
               value={qualityFilter}
@@ -165,8 +172,7 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
         <div className="text-[11px] leading-relaxed">
           <p className="font-bold uppercase tracking-widest mb-1 text-xs">Delete carefully!</p>
           <p>
-            Deleting a file here will permanently remove it from your disk. Ensure you only delete the duplicate you do <b>not</b> want to keep. 
-            Remember to enable "Allow media deletion" in Plex server settings.
+            Mark the files you want to delete. Then use the generated shell script on your server to permanently remove the duplicates. You will need to re-scan your library in Plex afterwards.
           </p>
         </div>
       </div>
@@ -196,8 +202,8 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
               item={item} 
               libraryType={library.type}
               qualityFilter={qualityFilter}
-              onDelete={handleDelete}
-              deletingId={deletingId}
+              onMarkToggle={handleMarkToggle}
+              markedFiles={markedFiles}
             />
           ))}
         </div>
@@ -206,7 +212,16 @@ export function DuplicateList({ api, library, onBack }: { api: PlexAPI, library:
   );
 }
 
-function DuplicateCard({ item, libraryType, qualityFilter, onDelete, deletingId }: any) {
+function DuplicateCard({ item, libraryType, qualityFilter, onMarkToggle, markedFiles }: any) {
+  // TCL Compatibility check
+  const isTCLCompatible = (media: any) => {
+    const codec = (media.videoCodec || '').toLowerCase();
+    const resolution = parseInt(media.videoResolution) || 0;
+    // H.264/AVC 1080p or less is the most compatible "safe" format for almost any TCL TV (Roku or Android)
+    const isH264 = codec === 'h264' || codec === 'avc';
+    return isH264 && resolution <= 1080;
+  };
+
   // Title mapping
   const title = libraryType === 'show' 
     ? `${item.grandparentTitle} - S${String(item.parentIndex || 0).padStart(2, '0')}E${String(item.index || 0).padStart(2, '0')} - ${item.title}`
@@ -250,6 +265,12 @@ function DuplicateCard({ item, libraryType, qualityFilter, onDelete, deletingId 
                         <MonitorPlay className="w-3 h-3 mr-1" />
                         {media.videoResolution ? `${media.videoResolution}p` : 'UNK'}
                       </div>
+                      {isTCLCompatible(media) && (
+                        <div className="flex items-center text-[10px] font-bold text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded border border-green-400/20" title="High compatibility with TCL TVs (H.264 1080p)">
+                          <Tv className="w-3 h-3 mr-1" />
+                          TCL OK
+                        </div>
+                      )}
                   </div>
                   {media.Part?.map((part: any, i: number) => (
                     <p key={`file-${i}`} className="text-[11px] text-gray-400 mt-1 truncate font-mono" title={part.file}>
@@ -271,16 +292,22 @@ function DuplicateCard({ item, libraryType, qualityFilter, onDelete, deletingId 
                   </span>
                 </div>
                 
-                {media.Part?.map((part: any) => (
-                  <button
-                    key={part.id}
-                    onClick={() => onDelete(part.id, media.id, item.ratingKey)}
-                    disabled={deletingId === part.id}
-                    className="inline-flex items-center px-2 py-1.5 text-[10px] font-bold rounded uppercase tracking-widest bg-red-900/20 text-red-500 border border-red-900/50 hover:bg-red-900/40 disabled:opacity-50 transition-colors"
-                  >
-                    {deletingId === part.id ? 'Deleting...' : 'Delete'}
-                  </button>
-                ))}
+                {media.Part?.map((part: any) => {
+                  const isMarked = markedFiles.includes(part.file);
+                  return (
+                    <button
+                      key={part.id}
+                      onClick={() => onMarkToggle(part.file)}
+                      className={`inline-flex items-center px-2 py-1.5 text-[10px] font-bold rounded uppercase tracking-widest border transition-colors ${
+                        isMarked
+                          ? 'bg-red-900/40 text-red-400 border-red-500/50 hover:bg-red-900/60'
+                          : 'bg-[#222] text-gray-400 border-[#333] hover:bg-[#333] hover:text-white'
+                      }`}
+                    >
+                      {isMarked ? 'Marked for Deletion' : 'Mark to Delete'}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           );
